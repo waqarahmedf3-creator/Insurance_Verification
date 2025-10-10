@@ -14,13 +14,14 @@ import threading
 # In-memory storage
 verifications = {}
 chat_sessions = {}
+policies_db = {}
 
 class InsuranceHandler(BaseHTTPRequestHandler):
     def do_OPTIONS(self):
         """Handle CORS preflight requests"""
         self.send_response(200)
         self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
         self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
         self.end_headers()
 
@@ -31,10 +32,25 @@ class InsuranceHandler(BaseHTTPRequestHandler):
         self.send_header('Access-Control-Allow-Origin', '*')
         self.end_headers()
         
-        if self.path == '/':
+        parsed_url = urlparse(self.path)
+        path = parsed_url.path
+        
+        if path == '/':
             response = {"message": "Insurance Verification System API", "status": "healthy"}
-        elif self.path == '/health':
+        elif path == '/health':
             response = {"status": "healthy", "version": "1.0.0", "environment": "development"}
+        elif path == '/api/policies':
+            # Return all saved policies for the Saved Policies modal
+            response = {
+                "policies": list(policies_db.values())
+            }
+        elif path.startswith('/api/policies/'):
+            # Get individual policy by ID
+            policy_id = path.split('/')[-1]
+            if policy_id in policies_db:
+                response = policies_db[policy_id]
+            else:
+                response = {"error": "Policy not found"}
         else:
             response = {"error": "Not found"}
         
@@ -63,6 +79,68 @@ class InsuranceHandler(BaseHTTPRequestHandler):
             response = self.handle_chat(data)
         elif self.path == '/api/chat/session':
             response = self.handle_create_session()
+        elif self.path == '/api/policies':
+            response = self.handle_create_policy(data)
+        else:
+            response = {"error": "Endpoint not found"}
+
+        self.wfile.write(json.dumps(response).encode())
+        
+    def do_PUT(self):
+        """Handle PUT requests"""
+        content_length = int(self.headers.get('Content-Length', 0))
+        put_data = self.rfile.read(content_length)
+        
+        try:
+            data = json.loads(put_data.decode()) if put_data else {}
+        except json.JSONDecodeError:
+            data = {}
+
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.end_headers()
+        
+        parsed_url = urlparse(self.path)
+        path = parsed_url.path
+        
+        if path.startswith('/api/policies/'):
+            # Update policy by ID
+            policy_id = path.split('/')[-1]
+            if policy_id in policies_db:
+                # Update the policy with new data
+                policy = policies_db[policy_id]
+                for key, value in data.items():
+                    policy[key] = value
+                policy['updated_at'] = datetime.now().isoformat()
+                policies_db[policy_id] = policy
+                response = policy
+            else:
+                response = {"error": "Policy not found"}
+        else:
+            response = {"error": "Endpoint not found"}
+
+        self.wfile.write(json.dumps(response).encode())
+        
+    def do_DELETE(self):
+        """Handle DELETE requests"""
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.end_headers()
+        
+        parsed_url = urlparse(self.path)
+        path = parsed_url.path
+        
+        if path.startswith('/api/policies/'):
+            # Delete policy by ID
+            policy_id = path.split('/')[-1]
+            if policy_id in policies_db:
+                # Delete the policy
+                deleted_policy = policies_db.pop(policy_id)
+                response = {"success": True, "message": "Policy deleted successfully", "policy": deleted_policy}
+            else:
+                response = {"error": "Policy not found"}
         else:
             response = {"error": "Endpoint not found"}
 
@@ -322,6 +400,36 @@ class InsuranceHandler(BaseHTTPRequestHandler):
         }
         return actions.get(intent, ["Use verification form", "Contact support"])
 
+    def handle_create_policy(self, data):
+        """Create a new policy"""
+        policy_id = str(uuid.uuid4())
+        now = datetime.now().isoformat()
+        
+        policy_data = {
+            "id": policy_id,
+            "provider": data.get("provider", ""),
+            "member_id": data.get("member_id", ""),
+            "policy_number": data.get("policy_number", ""),
+            "first_name": data.get("first_name", ""),
+            "last_name": data.get("last_name", ""),
+            "dob": data.get("dob", ""),
+            "email": data.get("email", ""),
+            "phone": data.get("phone", ""),
+            "address": data.get("address", ""),
+            "zip_code": data.get("zip_code", ""),
+            "coverage_status": data.get("coverage_status", "active"),
+            "expiry_date": data.get("expiry_date", "2025-12-31"),
+            "premium_status": data.get("premium_status", "paid"),
+            "coverage_amount": data.get("coverage_amount", "$50,000"),
+            "created_at": now,
+            "updated_at": now
+        }
+        
+        # Store the policy in the in-memory database
+        policies_db[policy_id] = policy_data
+        
+        return policy_data
+        
     def handle_create_session(self):
         """Create a new chat session"""
         session_id = str(uuid.uuid4())
