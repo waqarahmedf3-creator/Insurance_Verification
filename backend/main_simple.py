@@ -20,7 +20,7 @@ app = FastAPI(
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001", "http://localhost:5173", "http://localhost:5175"],
+    allow_origins=["http://localhost:3000", "http://localhost:3001", "http://localhost:5173", "http://localhost:5174", "http://localhost:5175"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -114,17 +114,79 @@ async def get_current_user_info():
 @app.post("/api/verify", response_model=VerificationResponse)
 async def verify_insurance(request: VerificationRequest):
     """
-    Verify insurance details (mock implementation)
+    Verify insurance details (enhanced mock implementation)
     """
     request_id = str(uuid.uuid4())
     
-    # Mock verification response
+    # Determine scenario based on last digit of member ID
+    last_digit = int(request.member_id[-1]) if request.member_id and request.member_id[-1].isdigit() else 0
+    
+    if last_digit in [0, 1, 2]:
+        status = "active"
+        expiry_date = "2025-12-31"
+        premium_status = "paid"
+        coverage_amount = "$50,000"
+        message = "Policy is active and in good standing"
+    elif last_digit in [3, 4]:
+        status = "expired"
+        expiry_date = "2024-06-15"
+        premium_status = "overdue"
+        coverage_amount = "$0"
+        message = "Policy has expired. Please contact your agent to renew"
+    elif last_digit in [5, 6]:
+        status = "suspended"
+        expiry_date = "2025-03-31"
+        premium_status = "overdue"
+        coverage_amount = "$0"
+        message = "Policy is suspended due to non-payment of premiums"
+    elif last_digit == 7:
+        # Policy not found scenario
+        return VerificationResponse(
+            request_id=request_id,
+            status="not_found",
+            verified_at=datetime.utcnow().isoformat(),
+            source="provider",
+            provider_response={
+                "policy_number": f"POL{request.member_id[:6].upper()}",
+                "member_id": request.member_id,
+                "member_name": f"{request.last_name.title()}, John",
+                "provider": request.provider.title(),
+                "coverage_status": "not_found",
+                "expiry_date": None,
+                "premium_status": None,
+                "coverage_amount": None,
+                "plan_type": "Health Insurance Premium",
+                "last_payment_date": None,
+                "message": f"No policy found for member ID {request.member_id} with {request.provider}"
+            }
+        )
+    elif last_digit == 8:
+        status = "pending_verification"
+        expiry_date = "2025-12-31"
+        premium_status = "under_review"
+        coverage_amount = "TBD"
+        message = "Policy verification is pending. Please allow 24-48 hours for processing"
+    else:
+        status = "grace_period"
+        expiry_date = "2025-01-15"
+        premium_status = "grace_period"
+        coverage_amount = "$50,000"
+        message = "Policy is in grace period. Payment required within 30 days"
+
+    policy_number = f"POL{request.provider[:3].upper()}{request.member_id[:6]}"
+    
     mock_response = {
-        "status": "verified",
-        "policy_number": f"POL{request.member_id[:8].upper()}",
-        "coverage_status": "active",
-        "expiry_date": "2024-12-31",
-        "provider": request.provider
+        "policy_number": policy_number,
+        "member_id": request.member_id,
+        "member_name": f"{request.last_name.title()}, John",
+        "provider": request.provider.title(),
+        "coverage_status": status,
+        "expiry_date": expiry_date,
+        "premium_status": premium_status,
+        "coverage_amount": coverage_amount,
+        "plan_type": "Health Insurance Premium",
+        "last_payment_date": "2024-01-15" if status != "not_found" else None,
+        "message": message
     }
     
     # Store verification
@@ -138,7 +200,7 @@ async def verify_insurance(request: VerificationRequest):
     
     return VerificationResponse(
         request_id=request_id,
-        status="verified",
+        status="verified" if status in ["active", "expired", "suspended", "grace_period", "pending_verification"] else "not_found",
         verified_at=datetime.utcnow().isoformat(),
         source="provider",
         provider_response=mock_response
@@ -155,13 +217,52 @@ async def get_verification_details(request_id: str):
 @app.post("/api/policy-info")
 async def get_policy_info(request: VerificationRequest):
     """Get policy information for chatbot"""
-    # Mock policy info
+    # Determine scenario based on last digit of member ID
+    last_digit = int(request.member_id[-1]) if request.member_id and request.member_id[-1].isdigit() else 0
+    
+    if last_digit in [0, 1, 2]:
+        status = "active"
+        expiry_date = "2025-12-31"
+        premium_status = "paid"
+        coverage_amount = "$50,000"
+    elif last_digit in [3, 4]:
+        status = "expired"
+        expiry_date = "2024-06-15"
+        premium_status = "overdue"
+        coverage_amount = "$0"
+    elif last_digit in [5, 6]:
+        status = "suspended"
+        expiry_date = "2025-03-31"
+        premium_status = "overdue"
+        coverage_amount = "$0"
+    elif last_digit == 7:
+        return {
+            "error": "Policy not found in our records",
+            "error_code": "POLICY_NOT_FOUND",
+            "member_id": request.member_id
+        }
+    elif last_digit == 8:
+        status = "pending_verification"
+        expiry_date = "2025-12-31"
+        premium_status = "under_review"
+        coverage_amount = "TBD"
+    else:
+        status = "grace_period"
+        expiry_date = "2025-01-15"
+        premium_status = "grace_period"
+        coverage_amount = "$50,000"
+
     return {
-        "policy_number": f"POL{request.member_id[:8].upper()}",
-        "coverage_status": "active",
-        "expiry_date": "2024-12-31",
-        "source": "cache",
-        "verified_at": datetime.utcnow().isoformat()
+        "policy_number": f"POL{request.member_id[:6].upper()}",
+        "member_id": request.member_id,
+        "coverage_status": status,
+        "expiry_date": expiry_date,
+        "premium_status": premium_status,
+        "coverage_amount": coverage_amount,
+        "plan_type": "Health Insurance Premium",
+        "source": "policy_database",
+        "verified_at": datetime.utcnow().isoformat(),
+        "next_payment_due": "2025-02-01" if status in ["active", "grace_period"] else None
     }
 
 @app.get("/api/policy-info/by-number")
@@ -218,6 +319,11 @@ class PolicyCreateRequest(BaseModel):
     phone: Optional[str] = None
     address: Optional[str] = None
     zip_code: Optional[str] = None
+    city: Optional[str] = None
+    state_province: Optional[str] = None
+    policy_type: Optional[str] = None
+    coverage_status: Optional[str] = None
+    expiry_date: Optional[str] = None
     coverage_amount: Optional[float] = None
     premium_amount: Optional[float] = None
 
@@ -232,6 +338,11 @@ class PolicyUpdateRequest(BaseModel):
     phone: Optional[str] = None
     address: Optional[str] = None
     zip_code: Optional[str] = None
+    city: Optional[str] = None
+    state_province: Optional[str] = None
+    policy_type: Optional[str] = None
+    coverage_status: Optional[str] = None
+    expiry_date: Optional[str] = None
     coverage_amount: Optional[float] = None
     premium_amount: Optional[float] = None
 
@@ -247,6 +358,11 @@ class PolicyResponse(BaseModel):
     phone: Optional[str] = None
     address: Optional[str] = None
     zip_code: Optional[str] = None
+    city: Optional[str] = None
+    state_province: Optional[str] = None
+    policy_type: Optional[str] = None
+    coverage_status: Optional[str] = None
+    expiry_date: Optional[str] = None
     coverage_amount: Optional[float] = None
     premium_amount: Optional[float] = None
     created_at: str
@@ -270,6 +386,11 @@ async def create_policy(request: PolicyCreateRequest):
         "phone": request.phone,
         "address": request.address,
         "zip_code": request.zip_code,
+        "city": request.city,
+        "state_province": request.state_province,
+        "policy_type": request.policy_type,
+        "coverage_status": request.coverage_status,
+        "expiry_date": request.expiry_date,
         "coverage_amount": request.coverage_amount,
         "premium_amount": request.premium_amount,
         "created_at": now,
@@ -283,6 +404,22 @@ async def create_policy(request: PolicyCreateRequest):
 async def get_policies():
     """Get all policies"""
     return {"policies": list(policies_db.values())}
+
+@app.get("/api/policies/by-number", response_model=PolicyResponse)
+async def get_policy_by_number(policyNumber: str):
+    """Get a single saved policy by policy number (case-insensitive match)"""
+    for p in policies_db.values():
+        if str(p.get("policy_number", "")).lower() == str(policyNumber).lower():
+            return PolicyResponse(**p)
+    raise HTTPException(status_code=404, detail="Policy not found")
+
+@app.get("/api/policies/by-member")
+async def get_policies_by_member(first_name: str, last_name: str):
+    """Get saved policies by member first/last name (case-insensitive)"""
+    fn = first_name.strip().lower()
+    ln = last_name.strip().lower()
+    matches = [p for p in policies_db.values() if str(p.get("first_name", "")).strip().lower() == fn and str(p.get("last_name", "")).strip().lower() == ln]
+    return {"policies": matches}
 
 @app.put("/api/policies/{policy_id}", response_model=PolicyResponse)
 async def update_policy(policy_id: str, request: PolicyUpdateRequest):

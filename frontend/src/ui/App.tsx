@@ -22,12 +22,14 @@ const Navbar: React.FC = () => {
           >
             Verification Form
           </Link>
-          <Link 
-            to="/policies" 
+          {/* Hidden per user request
+          <Link
+            to="/policies"
             className={`nav-link ${location.pathname === '/policies' ? 'active' : ''}`}
           >
             Policy Management
           </Link>
+          */}
         </div>
       </div>
     </nav>

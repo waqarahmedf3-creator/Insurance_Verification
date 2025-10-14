@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import Modal from './Modal'
 import Toast from './Toast'
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000'
+const API_BASE = import.meta.env.VITE_API_BASE ?? ''
 const AUTH = 'Bearer dev-secret'
 
 export const VerifyForm: React.FC = () => {
@@ -40,6 +40,16 @@ export const VerifyForm: React.FC = () => {
   const [errorModalMessage, setErrorModalMessage] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const [toastMessage, setToastMessage] = useState<{message: string, type: 'success' | 'error' | 'info' | 'warning'} | null>(null)
+  // Renew Policy Details flow state
+  const [showRenewConfirmModal, setShowRenewConfirmModal] = useState(false)
+  const [showRenewDetailsModal, setShowRenewDetailsModal] = useState(false)
+  const [policyToRenew, setPolicyToRenew] = useState<any | null>(null)
+  const [renewDetailsCoverageAmount, setRenewDetailsCoverageAmount] = useState<string>('')
+  const [renewDetailsPremiumAmount, setRenewDetailsPremiumAmount] = useState<string>('')
+  const [renewDetailsExpiryDate, setRenewDetailsExpiryDate] = useState<string>('')
+  const [renewCoverageError, setRenewCoverageError] = useState<string | null>(null)
+  const [renewPremiumError, setRenewPremiumError] = useState<string | null>(null)
+  const [renewExpiryError, setRenewExpiryError] = useState<string | null>(null)
 
   const callVerify = async () => {
     console.log('callVerify: Starting verification...')
@@ -413,6 +423,7 @@ export const VerifyForm: React.FC = () => {
       try {
         const policy = data.provider_response
         const status = policy.coverage_status || 'unknown'
+        const statusLower = String(status).toLowerCase()
         
         let statusIcon = '✅'
         let statusClass = 'success'
@@ -433,7 +444,39 @@ export const VerifyForm: React.FC = () => {
 
         return (
           <div className={`result-card ${statusClass}`}>
-            <h3>{statusIcon} Verification Result</h3>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <h3 style={{ margin: 0 }}>{statusIcon} Verification Result</h3>
+              {(statusLower === 'expired' || statusLower === 'suspended') && (
+                <button
+                  className="btn compact"
+                  title="Renew Policy Details"
+                  onClick={() => {
+                    const basePolicy = {
+                      provider: policy.provider_name || provider,
+                      policy_number: policy.policy_number || '',
+                      first_name: firstName || '',
+                      last_name: lastName || '',
+                      dob: dob || '',
+                      member_id: memberId || '',
+                      coverage_amount: policy.coverage_amount || undefined,
+                      premium_amount: policy.premium_amount || undefined,
+                      expiry_date: policy.expiry_date || ''
+                    }
+                    setPolicyToRenew(basePolicy)
+                    setRenewDetailsCoverageAmount(
+                      basePolicy.coverage_amount !== undefined ? String(basePolicy.coverage_amount) : ''
+                    )
+                    setRenewDetailsPremiumAmount(
+                      basePolicy.premium_amount !== undefined ? String(basePolicy.premium_amount) : ''
+                    )
+                    setRenewDetailsExpiryDate(basePolicy.expiry_date || '')
+                    setShowRenewConfirmModal(true)
+                  }}
+                >
+                  Renew Policy Details
+                </button>
+              )}
+            </div>
             <div className="policy-details">
               <div className="detail-row">
                 <strong>Policy Number:</strong> {policy.policy_number || 'N/A'}
@@ -711,6 +754,204 @@ export const VerifyForm: React.FC = () => {
         <div className="error-modal-content compact">
           <p>{errorModalMessage}</p>
         </div>
+      </Modal>
+
+      {/* Renew Confirmation Modal */}
+      <Modal
+        isOpen={showRenewConfirmModal}
+        onClose={() => setShowRenewConfirmModal(false)}
+        title="Confirm Renewal"
+        size="sm"
+        footer={
+          <div className="actions">
+            <button
+              className="btn secondary"
+              onClick={() => setShowRenewConfirmModal(false)}
+            >
+              No
+            </button>
+            <button
+              className="btn"
+              onClick={() => {
+                setShowRenewConfirmModal(false)
+                setShowRenewDetailsModal(true)
+              }}
+            >
+              Yes
+            </button>
+          </div>
+        }
+      >
+        <div className="delete-confirm-content">
+          <p>Do you want to Renew this Expired/Suspended Policy?</p>
+        </div>
+      </Modal>
+
+      {/* Renew Expired/Suspended Policy Modal */}
+      <Modal
+        isOpen={showRenewDetailsModal}
+        onClose={() => {
+          setShowRenewDetailsModal(false)
+          setPolicyToRenew(null)
+        }}
+        title="Renew Expired/Suspended Policy"
+        size="md"
+        footer={
+          <div className="actions">
+            <button
+              className="btn secondary"
+              onClick={() => {
+                setShowRenewDetailsModal(false)
+                setPolicyToRenew(null)
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              className="btn"
+              onClick={async () => {
+                // Clear previous errors
+                setRenewCoverageError(null)
+                setRenewPremiumError(null)
+                setRenewExpiryError(null)
+
+                // Validate mandatory fields inline
+                const cov = parseFloat(renewDetailsCoverageAmount)
+                const prem = parseFloat(renewDetailsPremiumAmount)
+                const exp = renewDetailsExpiryDate
+                let hasError = false
+                if (isNaN(cov) || cov <= 0) {
+                  setRenewCoverageError('Insurance Coverage must be a positive number')
+                  hasError = true
+                }
+                if (isNaN(prem) || prem <= 0) {
+                  setRenewPremiumError('Premium Amount must be a positive number')
+                  hasError = true
+                }
+                if (!exp) {
+                  setRenewExpiryError('Expiry Date is required')
+                  hasError = true
+                } else {
+                  const today = new Date()
+                  const expDate = new Date(exp)
+                  // compare end of today to avoid timezone flakiness
+                  const endOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59)
+                  if (!(expDate > endOfToday)) {
+                    setRenewExpiryError('Expiry Date must be a future date')
+                    hasError = true
+                  }
+                }
+                if (hasError) return
+
+                if (!policyToRenew) {
+                  // Keep using global error modal for non-field errors
+                  setErrorModalMessage('No policy selected for renewal')
+                  return
+                }
+
+                const body = {
+                  provider: policyToRenew.provider,
+                  member_id: policyToRenew.member_id,
+                  policy_number: policyToRenew.policy_number,
+                  first_name: policyToRenew.first_name,
+                  last_name: policyToRenew.last_name,
+                  dob: policyToRenew.dob,
+                  email: '',
+                  phone: '',
+                  address: '',
+                  zip_code: '',
+                  coverage_amount: cov,
+                  premium_amount: prem,
+                  expiry_date: exp
+                }
+
+                try {
+                  const resp = await fetch(`${API_BASE}/api/policies`, {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'Authorization': `Bearer ${localStorage.getItem('authToken') || 'test-token'}`
+                    },
+                    body: JSON.stringify(body)
+                  })
+                  if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({}))
+                    setErrorModalMessage(`Failed to save renewed policy: ${err.detail || 'Server error'}`)
+                    return
+                  }
+                  const newPolicy = await resp.json()
+                  setSavedPolicies([...savedPolicies, newPolicy])
+                  setShowRenewDetailsModal(false)
+                  setPolicyToRenew(null)
+                  setToastMessage({ message: 'Policy renewed successfully!', type: 'success' })
+                } catch (e) {
+                  console.error('Error renewing policy', e)
+                  setErrorModalMessage('Network error: Unable to renew policy. Please try again.')
+                }
+              }}
+            >
+              Save
+            </button>
+          </div>
+        }
+      >
+        {policyToRenew && (
+          <div className="grid grid-2">
+            {/* Read-only fields */}
+            <label>Provider
+              <input value={policyToRenew.provider || ''} readOnly />
+            </label>
+            <label>Policy Number
+              <input value={policyToRenew.policy_number || ''} readOnly />
+            </label>
+            <label>First Name
+              <input value={policyToRenew.first_name || ''} readOnly />
+            </label>
+            <label>Last Name
+              <input value={policyToRenew.last_name || ''} readOnly />
+            </label>
+            <label>Date of Birth
+              <input value={policyToRenew.dob || ''} readOnly />
+            </label>
+
+            {/* Editable fields */}
+            <label>Insurance Coverage <span className="required">*</span>
+              <input
+                className={renewCoverageError ? 'invalid' : ''}
+                value={renewDetailsCoverageAmount}
+                onChange={e => setRenewDetailsCoverageAmount(e.target.value)}
+                inputMode="decimal"
+                placeholder="e.g. 50000"
+              />
+              {renewCoverageError && (
+                <div className="field-error">{renewCoverageError}</div>
+              )}
+            </label>
+            <label>Premium Amount <span className="required">*</span>
+              <input
+                className={renewPremiumError ? 'invalid' : ''}
+                value={renewDetailsPremiumAmount}
+                onChange={e => setRenewDetailsPremiumAmount(e.target.value)}
+                inputMode="decimal"
+                placeholder="e.g. 120.50"
+              />
+              {renewPremiumError && (
+                <div className="field-error">{renewPremiumError}</div>
+              )}
+            </label>
+            <label>Expiry Date <span className="required">*</span>
+              <input
+                type="date"
+                className={renewExpiryError ? 'invalid' : ''}
+                value={renewDetailsExpiryDate}
+                onChange={e => setRenewDetailsExpiryDate(e.target.value)}
+              />
+              {renewExpiryError && (
+                <div className="field-error">{renewExpiryError}</div>
+              )}
+            </label>
+          </div>
+        )}
       </Modal>
 
       {/* Toast Notifications */}

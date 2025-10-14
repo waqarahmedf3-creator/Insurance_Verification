@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Camera, AlertCircle, CheckCircle } from 'lucide-react';
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
+const API_BASE = import.meta.env.VITE_API_BASE ?? '';
 const AUTH = 'Bearer dev-secret';
 
 export const PolicyManagement: React.FC = () => {
