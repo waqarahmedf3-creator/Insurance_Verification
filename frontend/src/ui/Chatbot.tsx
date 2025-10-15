@@ -523,9 +523,6 @@ Use this actual data to answer the user's question accurately.`;
       // Provide helpful fallback response based on user intent
       const detectedPolicyNumber = detectPolicyNumber(trimmed)
       if (detectedPolicyNumber) {
-
-
-        const detectedPolicyNumber = detectPolicyNumber(trimmed)
         errorMessage += `For policy ${detectedPolicyNumber} questions, please verify the policy number or provide your member ID for manual lookup.`
 
       } else if (/cover|valid|expire|policy|benefit|claim/i.test(trimmed)) {
